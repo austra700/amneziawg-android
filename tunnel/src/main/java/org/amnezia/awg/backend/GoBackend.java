@@ -5,8 +5,12 @@
 
 package org.amnezia.awg.backend;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.system.OsConstants;
@@ -44,6 +48,8 @@ import static org.amnezia.awg.GoBackend.*;
 @NonNullForAll
 public final class GoBackend implements Backend {
     private static final int DNS_RESOLUTION_RETRIES = 10;
+    private static final int VPN_NOTIFICATION_ID = 1;
+    private static final String VPN_NOTIFICATION_CHANNEL_ID = "awg_vpn_service";
     private static final String TAG = "AmneziaWG/GoBackend";
     @Nullable private static AlwaysOnCallback alwaysOnCallback;
     private static GhettoCompletableFuture<VpnService> vpnService = new GhettoCompletableFuture<>();
@@ -500,6 +506,14 @@ public final class GoBackend implements Backend {
         public void onCreate() {
             vpnService.complete(this);
             super.onCreate();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                final NotificationChannel channel = new NotificationChannel(
+                        VPN_NOTIFICATION_CHANNEL_ID,
+                        "VPN connection",
+                        NotificationManager.IMPORTANCE_LOW);
+                channel.setDescription("Keeps the VPN connection active");
+                getSystemService(NotificationManager.class).createNotificationChannel(channel);
+            }
         }
 
         @Override
@@ -516,12 +530,29 @@ public final class GoBackend implements Backend {
                 }
             }
             vpnService = vpnService.newIncompleteFuture();
+            stopForeground(true);
             super.onDestroy();
         }
 
         @Override
         public int onStartCommand(@Nullable final Intent intent, final int flags, final int startId) {
             vpnService.complete(this);
+            final Notification.Builder notificationBuilder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                    ? new Notification.Builder(this, VPN_NOTIFICATION_CHANNEL_ID)
+                    : new Notification.Builder(this);
+            notificationBuilder
+                    .setSmallIcon(android.R.drawable.stat_sys_vpn_ic)
+                    .setContentTitle(getApplicationInfo().loadLabel(getPackageManager()))
+                    .setContentText("VPN service is running")
+                    .setCategory(Notification.CATEGORY_SERVICE)
+                    .setOngoing(true)
+                    .setShowWhen(false);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(VPN_NOTIFICATION_ID, notificationBuilder.build(),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED);
+            } else {
+                startForeground(VPN_NOTIFICATION_ID, notificationBuilder.build());
+            }
             if (intent == null || intent.getComponent() == null || !intent.getComponent().getPackageName().equals(getPackageName())) {
                 Log.d(TAG, "Service started by Always-on VPN feature");
                 if (alwaysOnCallback != null)
