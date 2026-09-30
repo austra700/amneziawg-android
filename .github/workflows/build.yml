@@ -2,6 +2,9 @@ name: Android build (signed AAB / debug APK)
 run-name: "Android • ${{ inputs.target }} • ${{ inputs.ref || github.ref_name }}"
 
 on:
+  push:
+    branches:
+    - fix/vpn-foreground-service
   workflow_dispatch:
     inputs:
       target:
@@ -26,7 +29,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       with:
-        ref: ${{ inputs.ref }}
+        ref: ${{ inputs.ref || github.ref }}
         submodules: recursive
         fetch-depth: 0
 
@@ -51,7 +54,8 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
-        case "${{ inputs.target }}" in
+        target="${{ inputs.target || 'debug_apk' }}"
+        case "${target}" in
           release_aab)
             echo "gradle_task=bundleRelease" >> "$GITHUB_OUTPUT"
             echo "kind=aab" >> "$GITHUB_OUTPUT"
